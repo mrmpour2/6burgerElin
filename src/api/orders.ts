@@ -49,6 +49,7 @@ export interface OrderLineInput {
 
 export interface CreateOrderInput {
   sessionId?: string;
+  idempotencyKey: string;
   customerName: string;
   customerPhone: string;
   customerEmail?: string;
@@ -62,6 +63,7 @@ export interface CreatedOrder {
   status: string;
   totalAmount: number;
   currency: string;
+  expiresAt: string;
 }
 
 /** پیکربندی پرداخت؛ سرور تعیین می‌کند کدام روش‌ها فعال‌اند. */
@@ -72,13 +74,13 @@ export async function fetchPaymentConfig(): Promise<PaymentConfig> {
 
 /** ساخت سفارش و رزرو موجودی. مبلغ نهایی را سرور از قیمت‌های دیتابیس می‌سازد. */
 export async function createOrder(input: CreateOrderInput): Promise<CreatedOrder> {
-  const { data } = await apiClient.post<{ order: CreatedOrder }>("/payment/orders", input);
+  const { data } = await apiClient.post<{ order: CreatedOrder }>("/payment/orders", input, { withCredentials: true, headers: { "Idempotency-Key": input.idempotencyKey } });
   return data.order;
 }
 
 /** درخواست پرداخت آنلاین؛ آدرسی که مرورگر باید به آن برود. */
 export async function requestZibalPayment(orderId: string): Promise<string> {
-  const { data } = await apiClient.post<{ paymentUrl: string }>("/payment/zibal/request", { orderId });
+  const { data } = await apiClient.post<{ paymentUrl: string }>("/payment/zibal/request", { orderId }, { withCredentials: true });
   return data.paymentUrl;
 }
 
@@ -97,7 +99,7 @@ export async function submitCardReceipt(
   const { data } = await apiClient.post<{ payment: { message: string } }>(
     "/payment/card-to-card/submit",
     { orderId, imageData, ...(reference ? { transferReference: reference } : {}) },
-    { timeout: 45000 },
+    { timeout: 45000, withCredentials: true },
   );
   return data.payment.message;
 }
@@ -120,17 +122,32 @@ export function fileToDataUrl(file: File): Promise<string> {
  * بک‌اند به `${FRONTEND_URL}/?payment=success|failed` ریدایرکت می‌کند
  * (`zibalCallback`)، پس این پارامتر روی هر صفحه‌ای ممکن است دیده شود.
  */
-export function paymentOutcomeFromUrl(search: string): "success" | "failed" | null {
+export function paymentOutcomeFromUrl(search: string): "success" | "failed" | "refund_pending" | null {
   const outcome = new URLSearchParams(search).get("payment");
-  return outcome === "success" || outcome === "failed" ? outcome : null;
+  return outcome === "success" || outcome === "failed" || outcome === "refund_pending" ? outcome : null;
 }
 
 /** پیام خطای سرور را استخراج می‌کند و در نبود آن، پیام پیش‌فرض را برمی‌گرداند. */
-export function errorMessageFrom(error: unknown, fallback: string): string {
+export function errorMessageFrom(error: unknown, fallback = "ارتباط با سرور برقرار نشد. دوباره تلاش کنید."): string {
   if (typeof error === "object" && error !== null && "response" in error) {
     const response = (error as { response?: { data?: { message?: string; errors?: unknown } } }).response;
     const message = response?.data?.message;
     if (typeof message === "string" && message.trim()) return message;
   }
   return fallback;
+}
+
+export async function requestCheckoutOtp(phone: string, captchaToken?: string): Promise<string> {
+  const { data } = await apiClient.post<{ challengeId: string }>("/payment/otp/request", { phone, captchaToken }, { withCredentials: true });
+  return data.challengeId;
+}
+export async function verifyCheckoutOtp(phone: string, challengeId: string, code: string, captchaToken?: string) {
+  await apiClient.post("/payment/otp/verify", { phone, challengeId, code, captchaToken }, { withCredentials: true });
+}
+export async function readCheckoutOrder(orderId: string) {
+  const { data } = await apiClient.get<{ order: { id: string; status: string; expiresAt: string } }>(`/payment/orders/${encodeURIComponent(orderId)}`, { withCredentials: true });
+  return data.order;
+}
+export async function cancelCheckoutOrder(orderId: string) {
+  await apiClient.post(`/payment/orders/${encodeURIComponent(orderId)}/cancel`, {}, { withCredentials: true });
 }

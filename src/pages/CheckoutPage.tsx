@@ -8,6 +8,10 @@ import { useCart } from "@/context/CartContext";
 import { useLoyalty } from "@/context/LoyaltyContext";
 import {
   createOrder,
+  requestCheckoutOtp,
+  verifyCheckoutOtp,
+  readCheckoutOrder,
+  cancelCheckoutOrder,
   errorMessageFrom,
   fetchPaymentConfig,
   fileToDataUrl,
@@ -82,6 +86,18 @@ export default function CheckoutPage() {
   const [phone, setPhone] = useState(member?.phone ?? "");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [verifiedPhone, setVerifiedPhone] = useState("");
+  const [reservationExpiry, setReservationExpiry] = useState<string | null>(null);
+  const [reservedCartKey, setReservedCartKey] = useState<string | null>(null);
+  const [clock, setClock] = useState(Date.now());
+  const [orderKey, setOrderKey] = useState(() => {
+    const existing = sessionStorage.getItem("checkout-idempotency");
+    if (existing) return existing;
+    const key = crypto.randomUUID(); sessionStorage.setItem("checkout-idempotency", key); return key;
+  });
+  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
@@ -112,12 +128,18 @@ export default function CheckoutPage() {
   useEffect(() => {
     const stored = peekPendingOrder();
     if (!stored) return;
-    if (stored.cartKey && stored.cartKey !== cartFingerprint(lines)) {
-      forgetPendingOrder();
-      setMessage({ tone: "info", text: t("checkout.staleOrder") });
-      return;
-    }
+    if (stored.cartKey && stored.cartKey !== cartFingerprint(lines)) setMessage({ tone: "info", text: t("checkout.staleOrder") });
+    setReservedCartKey(stored.cartKey ?? null);
+    setPhone(stored.phone);
     setPendingOrder({ id: stored.orderId, orderNumber: stored.orderNumber, total: stored.total });
+    void readCheckoutOrder(stored.orderId).then(order => {
+      setReservationExpiry(order.expiresAt);
+      setVerifiedPhone(stored.phone);
+      if (["CANCELLED", "REFUNDED"].includes(order.status)) {
+        setPendingOrder(null); setReservationExpiry(null); setReservedCartKey(null); forgetPendingOrder();
+        const key = crypto.randomUUID(); setOrderKey(key); sessionStorage.setItem("checkout-idempotency", key);
+      }
+    }).catch(() => setVerifiedPhone(""));
     // فقط یک‌بار در mount؛ تغییر سبد نباید پیام را دوباره بسازد.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -130,6 +152,9 @@ export default function CheckoutPage() {
 
   const canSubmit =
     lines.length > 0 &&
+    verifiedPhone === phone.trim() && Boolean(verifiedPhone) &&
+    (!reservationExpiry || new Date(reservationExpiry).getTime() > clock) &&
+    (!reservedCartKey || reservedCartKey === cartFingerprint(lines)) &&
     !busy &&
     config !== null &&
     (method === "zibal" ? config.zibalEnabled : config.cardToCard.enabled);
@@ -174,7 +199,9 @@ export default function CheckoutPage() {
       let order = pendingOrder;
       if (!order) {
         const lineByKey = new Map(lines.map((line) => [line.key, line]));
+        if (verifiedPhone !== phone.trim()) throw new Error("Mobile verification is required.");
         const created = await createOrder({
+          idempotencyKey: orderKey,
           sessionId: getChatSessionId(),
           customerName: name.trim(),
           customerPhone: phone.trim(),
@@ -203,6 +230,9 @@ export default function CheckoutPage() {
         });
         order = { id: created.id, orderNumber: created.orderNumber, total: created.totalAmount };
         setPendingOrder(order);
+        setReservationExpiry(created.expiresAt);
+        setReservedCartKey(cartFingerprint(lines));
+        rememberPendingOrder({ orderId: order.id, orderNumber: order.orderNumber, total: order.total, phone: phone.trim(), createdAt: new Date().toISOString(), cartKey: cartFingerprint(lines) });
       }
 
       if (method === "zibal") {
@@ -238,6 +268,8 @@ export default function CheckoutPage() {
       setPendingOrder(null);
       setReceipt(null);
       setReference("");
+      forgetPendingOrder();
+      const freshKey = crypto.randomUUID(); setOrderKey(freshKey); sessionStorage.setItem("checkout-idempotency", freshKey);
       clear();
     } catch (error) {
       setMessage({ tone: "error", text: errorMessageFrom(error, t("checkout.errorGeneric")) });
@@ -308,8 +340,9 @@ export default function CheckoutPage() {
                     <Field id="checkout-phone" label={t("checkout.phone")}>
                       <input
                         id="checkout-phone"
+                        disabled={Boolean(pendingOrder)}
                         value={phone}
-                        onChange={(event) => setPhone(event.target.value)}
+                        onChange={(event) => { setPhone(event.target.value); setVerifiedPhone(""); setChallengeId(""); setPendingOrder(null); setOrderKey(crypto.randomUUID()); }}
                         type="tel"
                         inputMode="tel"
                         dir="ltr"
@@ -318,6 +351,25 @@ export default function CheckoutPage() {
                         className={inputClass}
                       />
                     </Field>
+                    <div className="space-y-3" aria-label="Mobile verification">
+                      <Button type="button" disabled={busy || verifiedPhone === phone.trim()} onClick={async () => {
+                        setBusy(true); try { setChallengeId(await requestCheckoutOtp(phone)); setMessage({ tone: "info", text: language === "fa" ? "کد تأیید ارسال شد." : "Verification code requested." }); }
+                        catch(error) { setMessage({ tone: "error", text: errorMessageFrom(error) }); } finally { setBusy(false); }
+                      }}>{language === "fa" ? "ارسال کد تأیید موبایل" : "Send verification code"}</Button>
+                      {challengeId && verifiedPhone !== phone.trim() ? <>
+                        <input className={inputClass} aria-label={language === "fa" ? "کد تأیید" : "Verification code"} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={e => setOtpCode(e.target.value)} />
+                        <Button type="button" disabled={busy} onClick={async () => {
+                          setBusy(true); try { await verifyCheckoutOtp(phone, challengeId, otpCode); setVerifiedPhone(phone.trim()); setOtpCode(""); }
+                          catch(error) { setMessage({ tone: "error", text: errorMessageFrom(error) }); } finally { setBusy(false); }
+                        }}>{language === "fa" ? "تأیید شماره" : "Verify phone"}</Button>
+                      </> : null}
+                      {verifiedPhone === phone.trim() && verifiedPhone ? <p role="status">{language === "fa" ? "موبایل تأیید شد." : "Phone verified."}</p> : null}
+                      {reservationExpiry ? <p role="status">{language === "fa" ? "رزرو تا " : "Reserved until "}{new Date(reservationExpiry).toLocaleTimeString(language === "fa" ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })} · {Math.floor(Math.max(0, new Date(reservationExpiry).getTime() - clock) / 60000)}:{String(Math.floor(Math.max(0, new Date(reservationExpiry).getTime() - clock) / 1000) % 60).padStart(2, "0")}</p> : null}
+                      {pendingOrder ? <Button type="button" disabled={busy} onClick={async () => {
+                        setBusy(true); try { await cancelCheckoutOrder(pendingOrder.id); setPendingOrder(null); setReservationExpiry(null); setReservedCartKey(null); forgetPendingOrder(); const key = crypto.randomUUID(); setOrderKey(key); sessionStorage.setItem("checkout-idempotency", key); }
+                        catch(error) { setMessage({ tone: "error", text: errorMessageFrom(error) }); } finally { setBusy(false); }
+                      }}>{language === "fa" ? "لغو رزرو و شروع دوباره" : "Cancel reservation and start again"}</Button> : null}
+                    </div>
                     <Field id="checkout-email" label={t("checkout.email")}>
                       <input
                         id="checkout-email"

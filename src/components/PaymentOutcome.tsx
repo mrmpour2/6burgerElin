@@ -5,6 +5,7 @@ import { paymentOutcomeFromUrl } from "@/api/orders";
 import { useCart } from "@/context/CartContext";
 import { consumePendingOrder } from "@/utils/orderReward";
 import { cn } from "@/utils/cn";
+import { useLanguage } from "@/hooks/useLanguage";
 
 /**
  * نتیجه بازگشت از درگاه پرداخت.
@@ -20,8 +21,9 @@ import { cn } from "@/utils/cn";
  */
 export function PaymentOutcome() {
   const { t } = useTranslation();
+  const language = useLanguage();
   const { clear } = useCart();
-  const [outcome, setOutcome] = useState<"success" | "failed" | null>(null);
+  const [outcome, setOutcome] = useState<"success" | "failed" | "refund_pending" | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -64,7 +66,7 @@ export function PaymentOutcome() {
         <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-black">{t(success ? "payment.success" : "payment.failed")}</p>
+        <p className="text-sm font-black">{outcome === "refund_pending" ? (language === "fa" ? "پرداخت تأیید شد؛ به‌دلیل نبود موجودی، بازپرداخت برای پیگیری ثبت شده است. پشتیبانی نتیجه را اطلاع می‌دهد." : "Payment verified. A refund and support case were recorded because stock was unavailable.") : t(success ? "payment.success" : "payment.failed")}</p>
         {success ? (
           <p className="mt-1 text-xs font-bold">{t("payment.pointsAuto")}</p>
         ) : null}
