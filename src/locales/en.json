@@ -247,7 +247,7 @@
       "title": "Points activity",
       "empty": "No points activity yet. Your first paid order will show up here.",
       "noReference": "No reference",
-      "sources": {
+      "sources": {"adjustment": "Points adjustment",
         "order": "Order payment",
         "review": "Review bonus",
         "reward": "Reward redemption"

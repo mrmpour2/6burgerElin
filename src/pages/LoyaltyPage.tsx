@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { isClubApiError } from "@/api/club";
+import { isClubApiError, type ClubClaim } from "@/api/club";
+import { ClubOwnershipVerification } from "@/components/ClubOwnershipVerification";
 import { PageIntro } from "@/components/PageIntro";
 import { MotionSection } from "@/components/MotionSection";
 import { MotionText } from "@/components/MotionText";
@@ -49,6 +50,7 @@ const SOURCE_KEYS = {
   order: "loyalty.activity.sources.order",
   review: "loyalty.activity.sources.review",
   reward: "loyalty.activity.sources.reward",
+  adjustment: "loyalty.activity.sources.adjustment",
 } as const satisfies Record<ClubTransaction["source"], string>;
 
 const STATUS_KEYS = {
@@ -80,6 +82,7 @@ export default function LoyaltyPage() {
   const perks = t("loyalty.perks", { returnObjects: true }) as string[];
   const {
     member,
+    pendingPoints,
     rewards,
     transactions,
     redemptions,
@@ -93,6 +96,7 @@ export default function LoyaltyPage() {
   } = useLoyalty();
 
   const [mode, setMode] = useState<"join" | "login">("join");
+  const [claim, setClaim] = useState<ClubClaim | null>(null);
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [pin, setPin] = useState("");
@@ -146,7 +150,7 @@ export default function LoyaltyPage() {
     setBusy(true);
     try {
       if (mode === "join") {
-        await join({ name: trimmedName, phone: phone.trim(), pin: pin.trim() });
+        setClaim(await join({ name: trimmedName, phone: phone.trim(), pin: pin.trim() }));
       } else {
         await login({ phone: phone.trim(), pin: pin.trim() });
       }
@@ -199,6 +203,7 @@ export default function LoyaltyPage() {
 
   /** متن دلیل غیرفعال بودن پاداش؛ `ok` چیزی نشان نمی‌دهد. */
   const rewardReasonLabel = (reward: ClubReward): string => {
+    if (reward.reason === "verification_required") return language === "fa" ? "ابتدا مالکیت موبایل را تأیید کنید" : "Verify your mobile first";
     if (reward.reason === "ok") return "";
     if (reward.reason === "insufficient_points") {
       return t("loyalty.rewardReasons.insufficientPointsShort", {
@@ -251,7 +256,7 @@ export default function LoyaltyPage() {
             </div>
 
             <div>
-              {loading ? (
+              {claim ? <ClubOwnershipVerification initialClaim={claim} onVerified={() => setClaim(null)} /> : loading ? (
                 <div
                   className="grid min-h-80 place-items-center rounded-[2rem] border border-bun-line bg-bun-surface p-8 shadow-lg"
                   role="status"
@@ -323,6 +328,8 @@ export default function LoyaltyPage() {
                   </div>
 
                   <div className="p-6 sm:p-8">
+                    {member.verificationStatus !== "verified" && <ClubOwnershipVerification member={member} />}
+                    <p className="my-3 text-sm font-bold">{language === "fa" ? "امتیاز در انتظار تأیید: " : "Pending points: "}{number(pendingPoints)}</p>
                     <div className="flex items-end justify-between gap-4">
                       <span className="font-display text-2xl font-black text-bun-text">
                         {nextTier ? nextTier.name[language] : t("loyalty.topTierShort")}
@@ -742,6 +749,7 @@ export default function LoyaltyPage() {
                           <p className="text-sm font-black text-bun-text">
                             {t(SOURCE_KEYS[item.source])}
                           </p>
+                          {item.status === "legacy_unverified" && <p className="text-xs font-bold text-bun-muted">{language === "fa" ? "سابقهٔ قدیمی؛ قابل مصرف فقط پس از تأیید موبایل" : "Historical entry; available only after mobile verification"}</p>}
                           <p className="mt-0.5 truncate text-xs font-bold text-bun-muted">
                             {item.description || t("loyalty.activity.noReference")}
                             {formatClubDate(item.createdAt, language)
@@ -827,4 +835,3 @@ export default function LoyaltyPage() {
     </>
   );
 }
-

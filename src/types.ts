@@ -148,6 +148,9 @@ export interface ClubTierSnapshot {
 }
 
 export interface ClubMember {
+  verificationStatus: string;
+  verifiedPhone: string | null;
+  legacyUntil: string | null;
   id: string;
   name: string;
   /** شمارهٔ نرمال‌شده با ارقام لاتین. */
@@ -167,6 +170,7 @@ export type ClubRewardReason =
   | "expired"
   | "out_of_stock"
   | "login_required"
+  | "verification_required"
   | "tier_required"
   | "insufficient_points";
 
@@ -187,10 +191,11 @@ export interface ClubReward {
   reason: ClubRewardReason;
 }
 
-export type ClubTransactionType = "earn" | "redeem";
-export type ClubTransactionSource = "order" | "review" | "reward";
+export type ClubTransactionType = "earn" | "redeem" | "adjust";
+export type ClubTransactionSource = "order" | "review" | "reward" | "adjustment";
 
 export interface ClubTransaction {
+  status: string;
   id: string;
   type: ClubTransactionType;
   source: ClubTransactionSource;
@@ -218,6 +223,7 @@ export interface ClubRedemption {
 
 /** پاسخ `GET /api/public/club/me`؛ همهٔ داده‌های حساب در یک درخواست. */
 export interface ClubDashboard {
+  pendingPoints: number;
   member: ClubMember;
   transactions: ClubTransaction[];
   redemptions: ClubRedemption[];

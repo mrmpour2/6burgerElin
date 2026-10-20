@@ -18,6 +18,8 @@ import type {
  *
  *   GET  /api/public/club/rewards              → { rewards: ClubReward[] }
  *   POST /api/public/club/join                 ← { name, phone, pin }
+ *                                               → 202 { claim: ClubClaim }
+ *   POST /api/public/club/claims/verify        ← { claimId, code }
  *                                               → { member: ClubMember }
  *   POST /api/public/club/login                ← { phone, pin }
  *                                               → { member: ClubMember }
@@ -42,7 +44,10 @@ export interface ClubJoinInput {
   phone: string;
   /** ۴ تا ۸ رقم؛ ارقام فارسی/عربی هم پذیرفته می‌شوند. */
   pin: string;
+  captchaToken?: string;
 }
+
+export interface ClubClaim { claimId: string; challengeId: string; message: string; expiresIn: number; resendAfter: number }
 
 export interface ClubLoginInput {
   phone: string;
@@ -113,6 +118,7 @@ const REWARD_REASONS: readonly ClubRewardReason[] = [
   "expired",
   "out_of_stock",
   "login_required",
+  "verification_required",
   "tier_required",
   "insufficient_points",
 ];
@@ -167,6 +173,9 @@ function parseMember(value: unknown): ClubMember {
     id: text(raw.id),
     name: text(raw.name),
     phone: text(raw.phone),
+    verificationStatus: text(raw.verificationStatus),
+    verifiedPhone: nullableText(raw.verifiedPhone),
+    legacyUntil: nullableText(raw.legacyUntil),
     points: number(raw.points, { integer: true }),
     joinedAt: text(raw.joinedAt),
     lastLoginAt: nullableText(raw.lastLoginAt),
@@ -203,8 +212,8 @@ function parseTransaction(value: unknown): ClubTransaction {
   const raw = record(value);
   const type = text(raw.type);
   const source = text(raw.source);
-  if (type !== "earn" && type !== "redeem") badResponse();
-  if (source !== "order" && source !== "review" && source !== "reward") badResponse();
+  if (type !== "earn" && type !== "redeem" && type !== "adjust") badResponse();
+  if (source !== "order" && source !== "review" && source !== "reward" && source !== "adjustment") badResponse();
   return {
     id: text(raw.id),
     type,
@@ -213,6 +222,7 @@ function parseTransaction(value: unknown): ClubTransaction {
     balanceAfter: number(raw.balanceAfter, { integer: true }),
     description: nullableText(raw.description),
     createdAt: text(raw.createdAt),
+    status: text(raw.status),
   };
 }
 
@@ -248,6 +258,7 @@ function parseDashboard(value: unknown): ClubDashboard {
   const raw = record(value);
   return {
     member: parseMember(raw.member),
+    pendingPoints: number(raw.pendingPoints, { integer: true }),
     transactions: parseList(raw.transactions, parseTransaction),
     redemptions: parseList(raw.redemptions, parseRedemption),
     rewards: parseList(raw.rewards, parseReward),
@@ -283,9 +294,17 @@ export async function fetchClubDashboard(): Promise<ClubDashboard> {
   return parseDashboard(data);
 }
 
-export async function joinClub(input: ClubJoinInput): Promise<ClubMember> {
-  const data = await run(apiClient.post<unknown>(`${CLUB_BASE}/join`, input, WITH_COOKIE));
-  return parseMemberResponse(data);
+export async function joinClub(input: ClubJoinInput): Promise<ClubClaim> {
+  const data = await run(apiClient.post<{ claim: ClubClaim }>(`${CLUB_BASE}/join`, input, WITH_COOKIE));
+  return data.claim;
+}
+
+export async function verifyClubClaim(claimId: string, code: string, captchaToken?: string): Promise<ClubMember> {
+  return parseMemberResponse(await run(apiClient.post<unknown>(`${CLUB_BASE}/claims/verify`, { claimId, code, captchaToken }, WITH_COOKIE)));
+}
+
+export async function resendClubClaim(claimId: string, captchaToken?: string): Promise<ClubClaim> {
+  return (await run(apiClient.post<{ claim: ClubClaim }>(`${CLUB_BASE}/claims/resend`, { claimId, captchaToken }, WITH_COOKIE))).claim;
 }
 
 export async function loginClub(input: ClubLoginInput): Promise<ClubMember> {
