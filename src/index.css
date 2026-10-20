@@ -1,0 +1,309 @@
+@import "tailwindcss";
+
+
+/* Vazirmatn — local WOFF2 files from `public/fonts`.
+   Only the weights the UI actually uses are declared; the browser fetches a
+   face lazily, so an unused weight never costs a request. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("/fonts/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme inline {
+  --font-sans: "Vazirmatn", Tahoma, ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Vazirmatn", Tahoma, ui-sans-serif, system-ui, sans-serif;
+  /* Codes and phone numbers keep their tracking utilities, but not a second
+     typeface: every customer-facing glyph resolves to Vazirmatn. */
+  --font-mono: "Vazirmatn", Tahoma, ui-sans-serif, system-ui, sans-serif;
+
+  --color-bun-paper: var(--bun-paper);
+  --color-bun-surface: var(--bun-surface);
+  --color-bun-text: var(--bun-text);
+  --color-bun-muted: var(--bun-muted);
+  --color-bun-line: var(--bun-line);
+  --color-bun-accent: var(--bun-accent);
+  --color-bun-ink: #181111;
+  --color-bun-burgundy: #4e1017;
+  --color-bun-red: #a91f2b;
+  --color-bun-orange: #f06424;
+  --color-bun-gold: var(--bun-gold);
+}
+
+
+
+:root {
+  --bun-paper: #fffaf4;
+  --bun-surface: #f5ede3;
+  --bun-text: #211a17;
+  --bun-muted: #6b5e56;
+  --bun-line: #ded2c5;
+  --bun-orange: #f06424;
+  --bun-accent: #9c3310;
+  --bun-gold: #a96b00;
+}
+
+:root.dark {
+  --bun-paper: #151110;
+  --bun-surface: #211b1a;
+  --bun-text: #fff8f0;
+  --bun-muted: #bfb3a9;
+  --bun-line: #3b312e;
+  --bun-accent: #ff8b52;
+  --bun-gold: #f4b73f;
+}
+
+html {
+  scroll-behavior: smooth;
+  background: var(--bun-paper);
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  background: var(--bun-paper);
+  color: var(--bun-text);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  transition: background-color 240ms ease, color 240ms ease;
+}
+
+/* The `lang` attribute drives direction and locale-specific spacing; the font
+   family stays Vazirmatn for both Persian and English content. */
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: #f06424;
+  color: #181111;
+}
+
+@layer components {
+  .section-kicker {
+    font-size: 0.75rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--bun-accent);
+  }
+
+  html[lang="fa"] .section-kicker {
+    letter-spacing: 0;
+  }
+
+  .section-title {
+    font-family: var(--font-sans);
+    font-weight: 900;
+    line-height: 0.96;
+    letter-spacing: -0.055em;
+    color: var(--bun-text);
+  }
+
+  .section-title {
+    font-size: clamp(2.25rem, 6vw, 4.75rem);
+  }
+
+  html[lang="fa"] .section-title {
+    letter-spacing: -0.025em;
+    line-height: 1.18;
+  }
+
+  .section-copy {
+    max-width: 42rem;
+    font-size: 1rem;
+    line-height: 2rem;
+    color: var(--bun-muted);
+  }
+
+  @media (min-width: 640px) {
+    .section-copy {
+      font-size: 1.125rem;
+      line-height: 2.25rem;
+    }
+  }
+
+  .prose-bun p {
+    margin-bottom: 1.75rem;
+    font-size: 1.075rem;
+    line-height: 2.25rem;
+    color: var(--bun-text);
+  }
+
+  @media (min-width: 640px) {
+    .prose-bun p {
+      font-size: 1.125rem;
+      line-height: 2.5rem;
+    }
+  }
+
+  /* Focus styles for better accessibility. Utilities (outline-none, ring-*) still
+     win over this fallback because the utilities layer is emitted last. */
+  *:focus-visible {
+    outline: 2px solid var(--bun-orange);
+    outline-offset: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion system foundation — see skills/cinematic-gsap-lenis-motion-system
+ *
+ * `has-motion` is added by src/motion/motionSystem.ts and removed again if the
+ * engine fails, so with JavaScript disabled (or reduced motion) every element
+ * below stays visible. These rules are intentionally unlayered: they must win
+ * over Tailwind utilities such as `h-full` on the parallax image.
+ * ------------------------------------------------------------------------- */
+
+html.has-motion [data-motion-text],
+html.has-motion [data-reveal],
+html.has-motion [data-reveal-item],
+html.has-motion [data-image-reveal] {
+  visibility: hidden;
+}
+
+.motion-line-mask,
+.motion-word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  /* Display headings run at line-height 0.9–0.96, which is tighter than the font's
+     ink box. The padding keeps descenders (پ, ی, j, y) inside the mask and the
+     negative margin keeps the mask out of layout. */
+  padding-bottom: 0.18em;
+  margin-bottom: -0.18em;
+}
+
+.motion-line,
+.motion-word {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+
+[data-image-reveal] {
+  overflow: hidden;
+}
+
+[data-parallax-image] {
+  display: block;
+  width: 100%;
+  height: 115%;
+  object-fit: cover;
+  will-change: transform;
+}
+
+[data-cursor] {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 9999;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  mix-blend-mode: difference;
+  will-change: transform;
+}
+
+/* GSAP writes the pointer position into `transform`, so the visible cursor hangs
+   off a zero-size anchor instead of relying on a CSS translate for centring. */
+[data-cursor]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  background: var(--bun-orange);
+  transform: translate(-50%, -50%);
+  transition: width 220ms ease, height 220ms ease;
+}
+
+[data-cursor][data-cursor-state="active"]::before {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+/* The label chip lives *inside* the cursor anchor (see `Layout`), so it must be
+   scoped to `[data-cursor]`. Unscoped, this rule also matched every hover
+   target that carries `data-cursor-label` (buttons, cards, links) and forced
+   `position: absolute; opacity: 0` on them — taking them out of flow and making
+   them invisible. */
+[data-cursor] [data-cursor-label] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--bun-ink);
+  color: var(--bun-paper);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transform: translate(0.95rem, 0.95rem);
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+[data-cursor][data-cursor-state="active"] [data-cursor-label] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce),
+(pointer: coarse) {
+  [data-cursor] {
+    display: none;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
