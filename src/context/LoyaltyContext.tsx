@@ -15,6 +15,8 @@ import {
   isClubApiError,
   isClubUnauthorized,
   joinClub,
+  verifyClubClaim,
+  type ClubClaim,
   loginClub,
   logoutClub,
   redeemClubReward,
@@ -44,6 +46,7 @@ import type {
  */
 
 interface LoyaltyState {
+  pendingPoints: number;
   member: ClubMember | null;
   rewards: ClubReward[];
   transactions: ClubTransaction[];
@@ -59,8 +62,9 @@ interface LoyaltyContextValue extends LoyaltyState {
   isMember: boolean;
   /** خواندن دوباره نشست و کاتالوگ (مثلاً پس از بازگشت از درگاه). */
   refresh: () => Promise<void>;
-  /** عضویت تازه؛ کوکی نشست را سرور ست می‌کند. */
-  join: (input: ClubJoinInput) => Promise<ClubMember>;
+  /** ادعای مالکیت؛ نشست باشگاه فقط پس از OTP ساخته می‌شود. */
+  join: (input: ClubJoinInput) => Promise<ClubClaim>;
+  verify: (claimId: string, code: string, captchaToken?: string) => Promise<ClubMember>;
   /** ورود عضو موجود با شماره و رمز. */
   login: (input: ClubLoginInput) => Promise<ClubMember>;
   /** خروج؛ کوکی HttpOnly سمت سرور پاک می‌شود. */
@@ -72,6 +76,7 @@ interface LoyaltyContextValue extends LoyaltyState {
 const LoyaltyContext = createContext<LoyaltyContextValue | null>(null);
 
 const EMPTY_STATE: LoyaltyState = {
+  pendingPoints: 0,
   member: null,
   rewards: [],
   transactions: [],
@@ -102,6 +107,7 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
 
   const applyDashboard = useCallback((dashboard: ClubDashboard) => {
     setState({
+      pendingPoints: dashboard.pendingPoints,
       member: dashboard.member,
       rewards: dashboard.rewards,
       transactions: dashboard.transactions,
@@ -176,9 +182,11 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
     }
   }, [applyDashboard]);
 
-  const join = useCallback(
-    async (input: ClubJoinInput) => {
-      const member = await joinClub(input);
+  const join = useCallback((input: ClubJoinInput) => joinClub(input), []);
+
+  const verify = useCallback(
+    async (claimId: string, code: string, captchaToken?: string) => {
+      const member = await verifyClubClaim(claimId, code, captchaToken);
       requestIdRef.current += 1;
       setState((current) => ({ ...current, member, loading: false, error: null }));
       await syncAccount();
@@ -203,6 +211,7 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
     // پاسخ bootstrap در پرواز نباید عضو قبلی را برگرداند.
     requestIdRef.current += 1;
     setState((current) => ({
+      pendingPoints: 0,
       member: null,
       rewards: asGuestRewards(current.rewards),
       transactions: [],
@@ -260,11 +269,12 @@ export function LoyaltyProvider({ children }: { children: ReactNode }) {
       isMember: state.member !== null,
       refresh: bootstrap,
       join,
+      verify,
       login,
       logout,
       redeem,
     }),
-    [state, bootstrap, join, login, logout, redeem],
+    [state, bootstrap, join, verify, login, logout, redeem],
   );
 
   return <LoyaltyContext value={value}>{children}</LoyaltyContext>;
