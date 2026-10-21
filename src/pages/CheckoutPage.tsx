@@ -2,6 +2,7 @@ import { CreditCard, ReceiptText, ShoppingBag, UploadCloud } from "lucide-react"
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { Captcha } from "@/components/Captcha";
 import { PageIntro } from "@/components/PageIntro";
 import { Button, buttonVariants } from "@/components/ui/Button";
 import { useCart } from "@/context/CartContext";
@@ -12,6 +13,7 @@ import {
   verifyCheckoutOtp,
   readCheckoutOrder,
   cancelCheckoutOrder,
+  errorCodeFrom,
   errorMessageFrom,
   fetchPaymentConfig,
   fileToDataUrl,
@@ -23,12 +25,15 @@ import {
 import { formatPrice, pointsForAmount } from "@/data/content";
 import { useLanguage } from "@/hooks/useLanguage";
 import { forgetPendingOrder, peekPendingOrder, rememberPendingOrder } from "@/utils/orderReward";
-import { isValidPhone } from "@/utils/phone";
+import { isValidPhone, toLatinDigits } from "@/utils/phone";
 import { getChatSessionId } from "@/utils/session";
 import { cn } from "@/utils/cn";
 
 /** بزرگ‌ترین تصویر رسیدی که سرور می‌پذیرد (سقف بدنه ۷ مگابایت است). */
 const MAX_RECEIPT_BYTES = 7 * 1024 * 1024;
+
+/** بعد از این تعداد کد اشتباه، بک‌اند کپچا می‌خواهد (`CAPTCHA_REQUIRED`). */
+const OTP_FAILURES_BEFORE_CAPTCHA = 3;
 
 /**
  * «اثر انگشت» سبد: کلید و تعداد هر سطر.
@@ -88,6 +93,10 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [otpFailures, setOtpFailures] = useState(0);
+  const [captchaNeeded, setCaptchaNeeded] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [verifiedPhone, setVerifiedPhone] = useState("");
   const [reservationExpiry, setReservationExpiry] = useState<string | null>(null);
   const [reservedCartKey, setReservedCartKey] = useState<string | null>(null);
@@ -158,6 +167,76 @@ export default function CheckoutPage() {
     !busy &&
     config !== null &&
     (method === "zibal" ? config.zibalEnabled : config.cardToCard.enabled);
+
+  /** توکن کپچا یک‌بارمصرف است؛ بعد از هر درخواست باید دوباره گرفته شود. */
+  const resetCaptcha = () => {
+    setCaptchaToken("");
+    setCaptchaReset((n) => n + 1);
+  };
+
+  const resetOtpGuard = () => {
+    setOtpFailures(0);
+    setCaptchaNeeded(false);
+    resetCaptcha();
+  };
+
+  const captchaMessage = () =>
+    language === "fa"
+      ? "برای ادامه کپچا را تکمیل کنید."
+      : "Please complete the captcha to continue.";
+
+  const handleSendOtp = async () => {
+    if (captchaNeeded && !captchaToken) {
+      setMessage({ tone: "error", text: captchaMessage() });
+      return;
+    }
+    setBusy(true);
+    try {
+      setChallengeId(await requestCheckoutOtp(phone, captchaToken || undefined));
+      setOtpCode("");
+      resetOtpGuard();
+      setMessage({ tone: "info", text: language === "fa" ? "کد تأیید ارسال شد." : "Verification code requested." });
+    } catch (error) {
+      if (errorCodeFrom(error) === "CAPTCHA_REQUIRED") {
+        setCaptchaNeeded(true);
+        setMessage({ tone: "error", text: captchaMessage() });
+      } else {
+        setMessage({ tone: "error", text: errorMessageFrom(error) });
+      }
+      resetCaptcha();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (captchaNeeded && !captchaToken) {
+      setMessage({ tone: "error", text: captchaMessage() });
+      return;
+    }
+    setBusy(true);
+    try {
+      await verifyCheckoutOtp(phone, challengeId, otpCode, captchaNeeded ? captchaToken : undefined);
+      setVerifiedPhone(phone.trim());
+      setOtpCode("");
+      setMessage(null);
+      resetOtpGuard();
+    } catch (error) {
+      if (errorCodeFrom(error) === "CAPTCHA_REQUIRED") {
+        // سرور کپچا خواسته (مثلاً بعد از رفرش صفحه که شمارنده محلی صفر شده).
+        setCaptchaNeeded(true);
+        setMessage({ tone: "error", text: captchaMessage() });
+      } else {
+        const failures = otpFailures + 1;
+        setOtpFailures(failures);
+        if (failures >= OTP_FAILURES_BEFORE_CAPTCHA) setCaptchaNeeded(true);
+        setMessage({ tone: "error", text: errorMessageFrom(error) });
+      }
+      resetCaptcha();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onReceiptChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -342,7 +421,7 @@ export default function CheckoutPage() {
                         id="checkout-phone"
                         disabled={Boolean(pendingOrder)}
                         value={phone}
-                        onChange={(event) => { setPhone(event.target.value); setVerifiedPhone(""); setChallengeId(""); setPendingOrder(null); setOrderKey(crypto.randomUUID()); }}
+                        onChange={(event) => { setPhone(event.target.value); setVerifiedPhone(""); setChallengeId(""); setOtpCode(""); resetOtpGuard(); setPendingOrder(null); setOrderKey(crypto.randomUUID()); }}
                         type="tel"
                         inputMode="tel"
                         dir="ltr"
@@ -352,17 +431,25 @@ export default function CheckoutPage() {
                       />
                     </Field>
                     <div className="space-y-3" aria-label="Mobile verification">
-                      <Button type="button" disabled={busy || verifiedPhone === phone.trim()} onClick={async () => {
-                        setBusy(true); try { setChallengeId(await requestCheckoutOtp(phone)); setMessage({ tone: "info", text: language === "fa" ? "کد تأیید ارسال شد." : "Verification code requested." }); }
-                        catch(error) { setMessage({ tone: "error", text: errorMessageFrom(error) }); } finally { setBusy(false); }
-                      }}>{language === "fa" ? "ارسال کد تأیید موبایل" : "Send verification code"}</Button>
+                      <Button type="button" disabled={busy || verifiedPhone === phone.trim() || (captchaNeeded && !captchaToken)} onClick={() => void handleSendOtp()}>
+                        {language === "fa" ? "ارسال کد تأیید موبایل" : "Send verification code"}
+                      </Button>
                       {challengeId && verifiedPhone !== phone.trim() ? <>
-                        <input className={inputClass} aria-label={language === "fa" ? "کد تأیید" : "Verification code"} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={e => setOtpCode(e.target.value)} />
-                        <Button type="button" disabled={busy} onClick={async () => {
-                          setBusy(true); try { await verifyCheckoutOtp(phone, challengeId, otpCode); setVerifiedPhone(phone.trim()); setOtpCode(""); }
-                          catch(error) { setMessage({ tone: "error", text: errorMessageFrom(error) }); } finally { setBusy(false); }
-                        }}>{language === "fa" ? "تأیید شماره" : "Verify phone"}</Button>
+                        <input className={inputClass} aria-label={language === "fa" ? "کد تأیید" : "Verification code"} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otpCode} onChange={e => setOtpCode(toLatinDigits(e.target.value).replace(/[^0-9]/g, ""))} />
+                        <Button type="button" disabled={busy || otpCode.trim().length !== 6 || (captchaNeeded && !captchaToken)} onClick={() => void handleVerifyOtp()}>
+                          {language === "fa" ? "تأیید شماره" : "Verify phone"}
+                        </Button>
                       </> : null}
+                      {captchaNeeded && verifiedPhone !== phone.trim() ? (
+                        <div className="space-y-2">
+                          <p role="alert" className="text-xs font-bold text-bun-muted">
+                            {language === "fa"
+                              ? "به‌دلیل چند تلاش ناموفق، لطفاً کپچا را تکمیل کنید."
+                              : "Too many failed attempts. Please complete the captcha."}
+                          </p>
+                          <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />
+                        </div>
+                      ) : null}
                       {verifiedPhone === phone.trim() && verifiedPhone ? <p role="status">{language === "fa" ? "موبایل تأیید شد." : "Phone verified."}</p> : null}
                       {reservationExpiry ? <p role="status">{language === "fa" ? "رزرو تا " : "Reserved until "}{new Date(reservationExpiry).toLocaleTimeString(language === "fa" ? "fa-IR" : "en-US", { hour: "2-digit", minute: "2-digit" })} · {Math.floor(Math.max(0, new Date(reservationExpiry).getTime() - clock) / 60000)}:{String(Math.floor(Math.max(0, new Date(reservationExpiry).getTime() - clock) / 1000) % 60).padStart(2, "0")}</p> : null}
                       {pendingOrder ? <Button type="button" disabled={busy} onClick={async () => {

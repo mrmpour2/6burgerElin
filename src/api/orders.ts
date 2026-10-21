@@ -137,6 +137,15 @@ export function errorMessageFrom(error: unknown, fallback = "ارتباط با �
   return fallback;
 }
 
+/** کد خطای ماشینی سرور (مثل `CAPTCHA_REQUIRED`) یا `null`. */
+export function errorCodeFrom(error: unknown): string | null {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const code = (error as { response?: { data?: { code?: unknown } } }).response?.data?.code;
+    if (typeof code === "string" && code.trim()) return code;
+  }
+  return null;
+}
+
 export async function requestCheckoutOtp(phone: string, captchaToken?: string): Promise<string> {
   const { data } = await apiClient.post<{ challengeId: string }>("/payment/otp/request", { phone, captchaToken }, { withCredentials: true });
   return data.challengeId;
