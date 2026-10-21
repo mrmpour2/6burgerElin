@@ -1,0 +1,46 @@
+{
+  "name": "react-vite-tailwind",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:motion": "vite build && node tests/motion.e2e.mjs",
+    "test:reviews": "node --test tests/reviews.test.mjs",
+    "test:reviews:e2e": "vite build && node tests/reviews.e2e.mjs",
+    "test:addons:e2e": "vite build && node tests/addOns.e2e.mjs",
+    "test:tabletalk": "node --test tests/tableTalk.test.mjs",
+    "test:tabletalk:e2e": "vite build && node tests/tableTalk.e2e.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.94",
+    "@ai-sdk/react": "^4.0.145",
+    "ai": "^7.0.141",
+    "axios": "^1.20.0",
+    "clsx": "2.1.1",
+    "framer-motion": "^13.1.0",
+    "gsap": "^3.15.0",
+    "i18next": "^26.3.6",
+    "lenis": "^1.3.26",
+    "lucide-react": "^1.31.0",
+    "qrcode.react": "^4.2.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-i18next": "^17.0.11",
+    "react-router-dom": "^7.18.2",
+    "tailwind-merge": "3.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.1.17",
+    "@types/node": "^22.19.17",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "5.1.1",
+    "tailwindcss": "4.1.17",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vite-plugin-singlefile": "2.3.4"
+  }
+}
