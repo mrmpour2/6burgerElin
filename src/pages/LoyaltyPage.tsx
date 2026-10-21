@@ -16,6 +16,7 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { isClubApiError, type ClubClaim } from "@/api/club";
 import { ClubOwnershipVerification } from "@/components/ClubOwnershipVerification";
+import { Captcha } from "@/components/Captcha";
 import { PageIntro } from "@/components/PageIntro";
 import { MotionSection } from "@/components/MotionSection";
 import { MotionText } from "@/components/MotionText";
@@ -102,6 +103,9 @@ export default function LoyaltyPage() {
   const [pin, setPin] = useState("");
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  const [captchaNeeded, setCaptchaNeeded] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaReset, setCaptchaReset] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
   const [redeemError, setRedeemError] = useState("");
@@ -145,20 +149,29 @@ export default function LoyaltyPage() {
       setFeedback(t("loyalty.nameError"));
       return;
     }
+    if (mode === "join" && captchaNeeded && !captchaToken) return;
 
     setFeedback("");
     setBusy(true);
     try {
       if (mode === "join") {
-        setClaim(await join({ name: trimmedName, phone: phone.trim(), pin: pin.trim() }));
+        setClaim(await join({ name: trimmedName, phone: phone.trim(), pin: pin.trim(), captchaToken: captchaToken || undefined }));
+        setCaptchaNeeded(false);
       } else {
         await login({ phone: phone.trim(), pin: pin.trim() });
       }
       setName("");
       setPin("");
     } catch (cause) {
-      setFeedback(authErrorText(cause, mode));
+      if (isClubApiError(cause) && cause.code === "CAPTCHA_REQUIRED") {
+        setCaptchaNeeded(true);
+        setFeedback(language === "fa" ? "برای ادامه کپچا را تکمیل کنید." : "Please complete the captcha to continue.");
+      } else {
+        setFeedback(authErrorText(cause, mode));
+      }
     } finally {
+      setCaptchaToken("");
+      setCaptchaReset(value => value + 1);
       setBusy(false);
     }
   };
@@ -448,7 +461,8 @@ export default function LoyaltyPage() {
                       </p>
                     ) : null}
 
-                    <Button type="submit" size="lg" className="w-full" disabled={busy}>
+                    {mode === "join" && captchaNeeded && <Captcha onToken={setCaptchaToken} resetKey={captchaReset} />}
+                    <Button type="submit" size="lg" className="w-full" disabled={busy || (mode === "join" && captchaNeeded && !captchaToken)}>
                       {busy ? (
                         <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                       ) : (
